@@ -25,9 +25,8 @@ message GetHealthResponse {
 }
 
 message CreateNFTAssetRequest {
-  string assetId = 1;
-  string assetName = 2;
-  string assetDescription = 3;
+  string assetName = 1;
+  string assetDescription = 2;
 }
 
 message CreateNFTAssetResponse {
