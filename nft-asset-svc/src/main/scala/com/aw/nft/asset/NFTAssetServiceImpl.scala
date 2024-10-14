@@ -1,7 +1,7 @@
 package com.aw.nft.asset
 
 import com.aw.nft.asset.entity.NFTAssetEntity
-import com.aw.nft.asset.entity.NFTAssetEntity.{AssetCommand, CreateAsset, GetAsset, AddFileIdToAsset}
+import com.aw.nft.asset.entity.NFTAssetEntity.{AddFileIdToAsset, AssetCommand, ChangeAssetName, CreateAsset, GetAsset}
 import com.aw.nft.asset.model.NFTAsset
 import com.aw.nft.grpc.*
 import com.google.protobuf.empty.Empty
@@ -72,7 +72,14 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
       .map(_ => AddNFTFileIdResponse(assetId = in.assetId, message = "fileId added success"))
   }
 
-  override def renameNFTAsset(in: RenameNFTAssetRequest, metadata: Metadata): Future[RenameNFTAssetResponse] = ???
+  override def renameNFTAsset(in: RenameNFTAssetRequest, metadata: Metadata): Future[RenameNFTAssetResponse] = {
+    changeAssetName(in.assetId, in.assetName)
+      .recoverWith { case e =>
+        log.error(s"Failed to change asset name: ${e.getMessage}")
+        Future.failed(e)
+      }
+      .map(_ => RenameNFTAssetResponse(assetId = in.assetId, message = "asset name changed"))
+  }
 
   override def removeNFTAsset(in: RemoveNFTAssetRequest, metadata: Metadata): Future[RemoveNFTAssetResponse] = ???
 
@@ -93,3 +100,6 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
 
   protected def addFileId(assetId: String, fileId: String): Future[Done] =
     entityRef(assetId).askWithStatus[Done](ref => AddFileIdToAsset(assetId = assetId, fileId = fileId, replyTo = ref))
+
+  protected def changeAssetName(assetId: String, name: String): Future[Done] =
+    entityRef(assetId).askWithStatus[Done](ref => ChangeAssetName(assetId = assetId, name = name, replyTo = ref))
