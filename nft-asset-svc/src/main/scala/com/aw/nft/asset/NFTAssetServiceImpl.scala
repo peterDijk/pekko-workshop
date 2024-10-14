@@ -89,7 +89,7 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
   protected def createNewAsset(asset: NFTAsset): Future[Done] =
     entityRef(asset.id).askWithStatus[Done](ref => CreateAsset(asset, ref))
     // entity does not exist yet in cluster?
-    // does a new reference get created (getOrCreate)?
+    // does a new entity get created now (getOrCreate)?
 
   protected def addFileId(assetId: String, fileId: String): Future[Done] =
     entityRef(assetId).askWithStatus[Done](ref => AddFileIdToAsset(assetId = assetId, fileId = fileId, replyTo = ref))
