@@ -24,8 +24,8 @@ object NFTAssetEntity extends PersistenceUtils:
   final case class CreateAsset(asset: NFTAsset, replyTo: ActorRef[StatusReply[Done]]) extends AssetCommand(asset.id)
   final case class GetAsset(assetId: String, replyTo: ActorRef[StatusReply[NFTAsset]]) extends AssetCommand(assetId)
   final case class AddFileIdToAsset(assetId: String, fileId: String, replyTo: ActorRef[StatusReply[Done]]) extends AssetCommand(assetId)
-  // 20:35
   final case class ChangeAssetName(assetId: String, name: String, replyTo: ActorRef[StatusReply[Done]]) extends AssetCommand(assetId)
+  final case class DeleteAsset(assetId: String, replyTo: ActorRef[StatusReply[Done]]) extends AssetCommand(assetId)
 
   // Events
   sealed trait AssetEvent(val id: String) extends CborSerializable
@@ -33,6 +33,7 @@ object NFTAssetEntity extends PersistenceUtils:
   final case class AssetCreated(asset: NFTAsset) extends AssetEvent(asset.id)
   final case class FileIdAddedToAsset(asset: NFTAsset) extends AssetEvent(asset.id)
   final case class AssetNameChanged(asset: NFTAsset) extends AssetEvent(asset.id)
+  final case class AssetDeleted(asset: NFTAsset) extends AssetEvent(asset.id)
 
   // State
   sealed trait AssetState extends CborSerializable:
@@ -49,6 +50,7 @@ object NFTAssetEntity extends PersistenceUtils:
         case GetAsset(assetId, replyTo) => invalidReply(s"The entity ${assetId} is not created yet.", replyTo, ctx)
         case AddFileIdToAsset(assetId, fileId, replyTo) => invalidReply(s"The entity ${assetId} is not created yet.", replyTo, ctx)
         case ChangeAssetName(assetId, name, replyTo) => invalidReply(s"The entity ${assetId} is not created yet.", replyTo, ctx)
+        case DeleteAsset(assetId, replyTo) => invalidReply(s"The entity ${assetId} is not created yet.", replyTo, ctx)
 
     override def applyEvent(event: AssetEvent): AssetState = event match
       case AssetCreated(asset) => ActiveState(asset)
@@ -61,19 +63,22 @@ object NFTAssetEntity extends PersistenceUtils:
         case GetAsset(assetId, replyTo) => getAsset(asset, replyTo, ctx)
         case AddFileIdToAsset(assetId, fileId, replyTo) => addFileIdToAsset(asset, fileId, replyTo, ctx)
         case ChangeAssetName(assetId, name, replyTo) => changeAssetName(asset, name, replyTo, ctx)
+        case DeleteAsset(assetId, replyTo) => deleteAsset(asset, replyTo, ctx)
 
     override def applyEvent(event: AssetEvent): AssetState = event match
       case FileIdAddedToAsset(asset) => ActiveState(asset)
       case AssetNameChanged(asset) => ActiveState(asset)
+      case AssetDeleted(asset) => DeletedState(asset)
       case _ => this
 
   case class DeletedState(asset: NFTAsset) extends AssetState:
     override def applyCommand(assetId: String, ctx: ActorContext[AssetCommand], cmd: AssetCommand): CommandReply =
       cmd match
         case CreateAsset(asset, replyTo) => invalidReply(s"The entity ${asset.id} is in Deleted state.", replyTo, ctx)
-        case GetAsset(assetId, replyTo) => getAsset(asset, replyTo, ctx)
+        case GetAsset(assetId, replyTo) => invalidReply(s"The entity ${asset.id} is in Deleted state.", replyTo, ctx)
         case AddFileIdToAsset(assetId, fileId, replyTo) => invalidReply(s"Can't add a fileId to an asset once it has been deleted", replyTo, ctx)
         case ChangeAssetName(assetId, fileId, replyTo) => invalidReply("Can't change asset once it has been deleted", replyTo, ctx)
+        case DeleteAsset(assetId, replyTo) => invalidReply("Can't delete asset again once it has been deleted", replyTo, ctx)
 
     override def applyEvent(event: AssetEvent): AssetState = event match
       case _ => this
@@ -156,5 +161,14 @@ object NFTAssetEntity extends PersistenceUtils:
                              ctx: ActorContext[AssetCommand]
                              ): CommandReply =
     val event = AssetNameChanged(asset.copy(name = newName))
+    ctx.log.debug("Persisting Event: {} to object {}", event, asset.id)
+    persistEventAndAck(event, replyTo)
+
+  private def deleteAsset(
+                               asset: NFTAsset,
+                               replyTo: ActorRef[StatusReply[Done]],
+                               ctx: ActorContext[AssetCommand]
+                             ): CommandReply =
+    val event = AssetDeleted(asset)
     ctx.log.debug("Persisting Event: {} to object {}", event, asset.id)
     persistEventAndAck(event, replyTo)

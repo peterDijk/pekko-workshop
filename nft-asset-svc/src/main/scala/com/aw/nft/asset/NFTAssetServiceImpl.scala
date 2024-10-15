@@ -1,7 +1,7 @@
 package com.aw.nft.asset
 
 import com.aw.nft.asset.entity.NFTAssetEntity
-import com.aw.nft.asset.entity.NFTAssetEntity.{AddFileIdToAsset, AssetCommand, ChangeAssetName, CreateAsset, GetAsset}
+import com.aw.nft.asset.entity.NFTAssetEntity.{AddFileIdToAsset, AssetCommand, ChangeAssetName, CreateAsset, DeleteAsset, GetAsset}
 import com.aw.nft.asset.model.NFTAsset
 import com.aw.nft.grpc.*
 import com.google.protobuf.empty.Empty
@@ -81,7 +81,14 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
       .map(_ => RenameNFTAssetResponse(assetId = in.assetId, message = "asset name changed"))
   }
 
-  override def removeNFTAsset(in: RemoveNFTAssetRequest, metadata: Metadata): Future[RemoveNFTAssetResponse] = ???
+  override def removeNFTAsset(in: RemoveNFTAssetRequest, metadata: Metadata): Future[RemoveNFTAssetResponse] = {
+    deleteAsset(in.assetId)
+      .recoverWith { case e =>
+        log.error(s"Failed to delete asset: ${e.getMessage}")
+        Future.failed(e)
+      }
+      .map(_ => RemoveNFTAssetResponse(assetId = in.assetId, message = "asset deleted"))
+  }
 
   private def entityRef(assetId: String): EntityRef[AssetCommand] =
     sharding.entityRefFor(NFTAssetEntity.EntityKey, assetId)
@@ -103,3 +110,6 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
 
   protected def changeAssetName(assetId: String, name: String): Future[Done] =
     entityRef(assetId).askWithStatus[Done](ref => ChangeAssetName(assetId = assetId, name = name, replyTo = ref))
+
+  protected def deleteAsset(assetId: String): Future[Done] =
+    entityRef(assetId).askWithStatus[Done](ref => DeleteAsset(assetId = assetId, replyTo = ref))    
