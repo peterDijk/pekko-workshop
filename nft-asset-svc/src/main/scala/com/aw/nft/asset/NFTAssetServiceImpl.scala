@@ -1,7 +1,7 @@
 package com.aw.nft.asset
 
 import com.aw.nft.asset.entity.NFTAssetEntity
-import com.aw.nft.asset.entity.NFTAssetEntity.{AssetCommand, CreateAsset, GetAsset}
+import com.aw.nft.asset.entity.NFTAssetEntity.{AddFileIdToAsset, AssetCommand, ChangeAssetName, CreateAsset, DeleteAsset, GetAsset}
 import com.aw.nft.asset.model.NFTAsset
 import com.aw.nft.grpc.*
 import com.google.protobuf.empty.Empty
@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory
 
 import java.net.InetAddress
 import java.time.Instant
+import java.util.UUID
 import scala.concurrent.{ExecutionContext, Future}
 
 class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
@@ -35,8 +36,9 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
     )
 
   override def createNFTAsset(in: CreateNFTAssetRequest, metadata: Metadata): Future[CreateNFTAssetResponse] = {
+    val assetId = UUID.randomUUID.toString
     val newAsset = NFTAsset(
-      id = in.assetId,
+      id = assetId,
       name = in.assetName,
       description = in.assetDescription
     )
@@ -44,7 +46,7 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
       log.error(s"Failed to create NFT Asset: ${e.getMessage}")
       Future.failed(e)
     }
-    .map(_ => CreateNFTAssetResponse(in.assetId))
+    .map(_ => CreateNFTAssetResponse(assetId))
   }
 
   override def getNFTAsset(in: GetNFTAssetRequest, metadata: Metadata): Future[GetNFTAssetResponse] = {
@@ -53,14 +55,40 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
         log.error(s"Failed to get NFT Asset: ${e.getMessage}")
         Future.failed(e)
       }
-      .map(asset => GetNFTAssetResponse(asset.id, asset.name, asset.description))
+      .map(asset => GetNFTAssetResponse(
+        assetId = asset.id,
+        assetName = asset.name,
+        assetDescription = asset.description,
+        assetFileId = Some(asset.fileId.getOrElse("not added yet")))
+      )
   }
 
-  override def addNFTFileId(in: AddNFTFileIdRequest, metadata: Metadata): Future[AddNFTFileIdResponse] = ???
+  override def addNFTFileId(in: AddNFTFileIdRequest, metadata: Metadata): Future[AddNFTFileIdResponse] = {
+    addFileId(in.assetId, in.assetFileId)
+      .recoverWith { case e =>
+        log.error(s"Failed to add fileId to NFT Asset: ${e.getMessage}")
+        Future.failed(e)
+      }
+      .map(_ => AddNFTFileIdResponse(assetId = in.assetId, message = "fileId added success"))
+  }
 
-  override def renameNFTAsset(in: RenameNFTAssetRequest, metadata: Metadata): Future[RenameNFTAssetResponse] = ???
+  override def renameNFTAsset(in: RenameNFTAssetRequest, metadata: Metadata): Future[RenameNFTAssetResponse] = {
+    changeAssetName(in.assetId, in.assetName)
+      .recoverWith { case e =>
+        log.error(s"Failed to change asset name: ${e.getMessage}")
+        Future.failed(e)
+      }
+      .map(_ => RenameNFTAssetResponse(assetId = in.assetId, message = "asset name changed"))
+  }
 
-  override def removeNFTAsset(in: RemoveNFTAssetRequest, metadata: Metadata): Future[RemoveNFTAssetResponse] = ???
+  override def removeNFTAsset(in: RemoveNFTAssetRequest, metadata: Metadata): Future[RemoveNFTAssetResponse] = {
+    deleteAsset(in.assetId)
+      .recoverWith { case e =>
+        log.error(s"Failed to delete asset: ${e.getMessage}")
+        Future.failed(e)
+      }
+      .map(_ => RemoveNFTAssetResponse(assetId = in.assetId, message = "asset deleted"))
+  }
 
   private def entityRef(assetId: String): EntityRef[AssetCommand] =
     sharding.entityRefFor(NFTAssetEntity.EntityKey, assetId)
@@ -75,4 +103,13 @@ class NFTAssetServiceImpl[A: ActorSystem]() extends NFTAssetServicePowerApi:
   protected def createNewAsset(asset: NFTAsset): Future[Done] =
     entityRef(asset.id).askWithStatus[Done](ref => CreateAsset(asset, ref))
     // entity does not exist yet in cluster?
-    // does a new reference get created ?
+    // does a new entity get created now (getOrCreate)?
+
+  protected def addFileId(assetId: String, fileId: String): Future[Done] =
+    entityRef(assetId).askWithStatus[Done](ref => AddFileIdToAsset(assetId = assetId, fileId = fileId, replyTo = ref))
+
+  protected def changeAssetName(assetId: String, name: String): Future[Done] =
+    entityRef(assetId).askWithStatus[Done](ref => ChangeAssetName(assetId = assetId, name = name, replyTo = ref))
+
+  protected def deleteAsset(assetId: String): Future[Done] =
+    entityRef(assetId).askWithStatus[Done](ref => DeleteAsset(assetId = assetId, replyTo = ref))    

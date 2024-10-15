@@ -1,14 +1,7 @@
 package com.aw.nft.asset.svc
 
 import com.aw.nft.asset.entity.NFTAssetEntity
-import com.aw.nft.asset.entity.NFTAssetEntity.{
-  AssetCommand,
-  AssetCreated,
-  AssetEvent,
-  AssetState,
-  CreateAsset,
-  GetAsset
-}
+import com.aw.nft.asset.entity.NFTAssetEntity.{AddFileIdToAsset, AssetCommand, AssetCreated, AssetEvent, AssetState, ChangeAssetName, CreateAsset, DeleteAsset, GetAsset}
 import com.aw.nft.asset.model.NFTAsset
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.Done
@@ -95,5 +88,29 @@ class NFTAssetEntitySpec
       result.reply.isSuccess shouldBe true
       result.reply.getValue.id shouldBe testAsset.id
       result.reply.getValue.assetStatus.value shouldBe "active"
+      result.reply.getValue.fileId shouldBe None
     }
+    "be able to be enriched with a fileId" in {
+      eventSourcedTestKit.runCommand[StatusReply[Done]](ref => CreateAsset(testAsset, ref))
+      eventSourcedTestKit.runCommand[StatusReply[Done]](ref => AddFileIdToAsset(testAsset.id, "test-fileid-1", ref))
+      val result = eventSourcedTestKit.runCommand[StatusReply[NFTAsset]](ref => GetAsset(assetId, ref))
+      result.reply.isSuccess shouldBe true
+      result.reply.getValue.assetStatus.value shouldBe "active"
+      result.reply.getValue.fileId shouldBe Some("test-fileid-1")
+    }
+    "be able to be renamed" in {
+      val newName = "changed-name"
+      eventSourcedTestKit.runCommand[StatusReply[Done]](ref => CreateAsset(testAsset, ref))
+      eventSourcedTestKit.runCommand[StatusReply[Done]](ref => ChangeAssetName(testAsset.id, newName, ref))
+      val result = eventSourcedTestKit.runCommand[StatusReply[NFTAsset]](ref => GetAsset(assetId, ref))
+      result.reply.isSuccess shouldBe true
+      result.reply.getValue.assetStatus.value shouldBe "active"
+      result.reply.getValue.name shouldBe newName
+    }
+    "be able to be removed" in {
+      eventSourcedTestKit.runCommand[StatusReply[Done]](ref => CreateAsset(testAsset, ref))
+      eventSourcedTestKit.runCommand[StatusReply[Done]](ref => DeleteAsset(testAsset.id, ref))
+      val result = eventSourcedTestKit.runCommand[StatusReply[NFTAsset]](ref => GetAsset(assetId, ref))
+      result.reply.isSuccess shouldBe false
+    }    
   }
